@@ -10,6 +10,36 @@ function Test-ProxionAdmin {
     return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
 }
 
+function Test-ProxionSTA {
+    [CmdletBinding()]
+    param()
+
+    if (-not $IsWindows) { return $false }
+    return ([System.Threading.Thread]::CurrentThread.GetApartmentState() -eq [System.Threading.ApartmentState]::STA)
+}
+
+function Set-ProxionConsoleVisible {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][bool]$Visible)
+
+    if (-not $IsWindows) { return }
+
+    if (-not ('Proxion.NativeMethods' -as [type])) {
+        Add-Type -Namespace Proxion -Name NativeMethods -MemberDefinition @'
+            [DllImport("kernel32.dll")]
+            public static extern IntPtr GetConsoleWindow();
+            [DllImport("user32.dll")]
+            public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+'@
+    }
+
+    $handle = [Proxion.NativeMethods]::GetConsoleWindow()
+    if ($handle -eq [IntPtr]::Zero) { return }
+
+    # SW_HIDE = 0, SW_SHOW = 5
+    [Proxion.NativeMethods]::ShowWindow($handle, $(if ($Visible) { 5 } else { 0 })) | Out-Null
+}
+
 function Write-ProxionLog {
     [CmdletBinding()]
     param(
@@ -209,6 +239,6 @@ function Test-AnyProcessRunning {
     return $false
 }
 
-Export-ModuleMember -Function Test-ProxionAdmin, Write-ProxionLog, Get-ProxionConfig, `
-    Resolve-PurpleLauncherPath, Resolve-ProxyBridgeCliPath, New-ProxionProfile, `
-    Start-ProxyBridgeCli, Stop-ProxyBridgeCli, Test-AnyProcessRunning
+Export-ModuleMember -Function Test-ProxionAdmin, Test-ProxionSTA, Set-ProxionConsoleVisible, `
+    Write-ProxionLog, Get-ProxionConfig, Resolve-PurpleLauncherPath, Resolve-ProxyBridgeCliPath, `
+    New-ProxionProfile, Start-ProxyBridgeCli, Stop-ProxyBridgeCli, Test-AnyProcessRunning

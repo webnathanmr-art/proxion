@@ -61,39 +61,112 @@ if ($DryRun) {
     return
 }
 
-$bridgeProc = $null
-try {
-    Write-ProxionLog -Message 'Starting ProxyBridge CLI (traffic routing begins now)...' -LogFile $logFile
-    $bridgeProc = Start-ProxyBridgeCli -CliPath $cliPath -ProfilePath $profilePath -Verbosity $config.verbose
-    Start-Sleep -Seconds 2
-    if ($bridgeProc.HasExited) {
-        throw "ProxyBridge CLI exited immediately (exit code $($bridgeProc.ExitCode)). Check that this shell is elevated and the profile is valid: $profilePath"
+# Everything below needs WinForms (for the tray icon) and an STA thread. It's
+# wrapped in a function - rather than run inline - so that a -DryRun never
+# pulls in System.Drawing/System.Windows.Forms at all.
+function Start-ProxionSession {
+    # The tray icon (System.Windows.Forms.NotifyIcon) needs an STA thread. Relaunch
+    # under one if we're not already running in it, rather than asking the user to
+    # remember a -STA flag.
+    if (-not (Test-ProxionSTA)) {
+        Write-ProxionLog -Message 'Relaunching in STA mode (required for the tray icon)...' -LogFile $logFile
+        $psExe = (Get-Process -Id $PID).Path
+        $relaunchArgs = @('-NoProfile', '-STA', '-File', $PSCommandPath, '-ConfigPath', $ConfigPath)
+        if ($KeepProfile) { $relaunchArgs += '-KeepProfile' }
+        $relaunched = Start-Process -FilePath $psExe -ArgumentList $relaunchArgs -PassThru -Wait
+        exit $relaunched.ExitCode
     }
 
-    Write-ProxionLog -Message 'Launching NCSOFT PURPLE...' -LogFile $logFile
-    Start-Process -FilePath $purplePath | Out-Null
+    Add-Type -AssemblyName System.Windows.Forms
+    Add-Type -AssemblyName System.Drawing
 
-    Write-ProxionLog -Message 'Waiting for PURPLE (or a configured game) to appear...' -LogFile $logFile
-    $deadline = (Get-Date).AddSeconds($config.startupTimeoutSeconds)
-    while (-not (Test-AnyProcessRunning -Names $monitoredNames) -and (Get-Date) -lt $deadline) {
-        Start-Sleep -Seconds 1
-    }
+    $bridgeProc = $null
+    $trayIcon = $null
+    $timer = $null
+    $script:shutdownDone = $false
 
-    if (-not (Test-AnyProcessRunning -Names $monitoredNames)) {
-        Write-ProxionLog -Message 'Timed out waiting for PURPLE to start; stopping ProxyBridge.' -Level 'WARN' -LogFile $logFile
-    } else {
-        Write-ProxionLog -Message 'PURPLE is running. Proxion will stay active in the background and keep routing traffic until PURPLE and every configured game process have closed.' -LogFile $logFile
-        while (Test-AnyProcessRunning -Names $monitoredNames) {
-            Start-Sleep -Seconds $config.pollIntervalSeconds
+    function Invoke-ProxionShutdown {
+        if ($script:shutdownDone) { return }
+        $script:shutdownDone = $true
+
+        Write-ProxionLog -Message 'Stopping ProxyBridge CLI and restoring direct traffic...' -LogFile $logFile
+        Stop-ProxyBridgeCli -Process $bridgeProc
+        if (-not $KeepProfile) {
+            Remove-Item -LiteralPath $profilePath -ErrorAction SilentlyContinue
         }
-        Write-ProxionLog -Message 'PURPLE and all monitored game processes have closed.' -LogFile $logFile
+        if ($timer) { $timer.Stop(); $timer.Dispose() }
+        if ($trayIcon) { $trayIcon.Visible = $false; $trayIcon.Dispose() }
+        Set-ProxionConsoleVisible -Visible $true
+        Write-ProxionLog -Message 'Proxion session ended.' -LogFile $logFile
+        [System.Windows.Forms.Application]::Exit()
+    }
+
+    try {
+        Write-ProxionLog -Message 'Starting ProxyBridge CLI (traffic routing begins now)...' -LogFile $logFile
+        $bridgeProc = Start-ProxyBridgeCli -CliPath $cliPath -ProfilePath $profilePath -Verbosity $config.verbose
+        Start-Sleep -Seconds 2
+        if ($bridgeProc.HasExited) {
+            throw "ProxyBridge CLI exited immediately (exit code $($bridgeProc.ExitCode)). Check that this shell is elevated and the profile is valid: $profilePath"
+        }
+
+        Write-ProxionLog -Message 'Launching NCSOFT PURPLE...' -LogFile $logFile
+        Start-Process -FilePath $purplePath | Out-Null
+
+        $proxyLabel = "$($config.proxy.type.ToUpper()) $($config.proxy.host):$($config.proxy.port)"
+
+        $icon = $null
+        try { $icon = [System.Drawing.Icon]::ExtractAssociatedIcon($purplePath) } catch { $icon = $null }
+        if (-not $icon) { $icon = [System.Drawing.SystemIcons]::Application }
+
+        $menu = New-Object System.Windows.Forms.ContextMenuStrip
+        $statusItem = $menu.Items.Add("Routing via $proxyLabel")
+        $statusItem.Enabled = $false
+        $menu.Items.Add('-') | Out-Null
+        $openLogItem = $menu.Items.Add('Open Log File')
+        $exitItem = $menu.Items.Add('Stop Proxion')
+
+        $trayIcon = New-Object System.Windows.Forms.NotifyIcon
+        $trayIcon.Icon = $icon
+        $trayIcon.Text = "Proxion - routing PURPLE via $proxyLabel"
+        $trayIcon.ContextMenuStrip = $menu
+        $trayIcon.Visible = $true
+        $trayIcon.ShowBalloonTip(4000, 'Proxion', "Routing PURPLE traffic through $proxyLabel. Right-click the tray icon to stop.", [System.Windows.Forms.ToolTipIcon]::Info)
+
+        $openLogItem.Add_Click({ Start-Process -FilePath 'notepad.exe' -ArgumentList $logFile }.GetNewClosure())
+        $exitItem.Add_Click({ Invoke-ProxionShutdown })
+        $trayIcon.Add_DoubleClick({ Invoke-ProxionShutdown })
+
+        Write-ProxionLog -Message 'Proxion is now running in the background. Use the tray icon to stop it (right-click > Stop Proxion, or double-click).' -LogFile $logFile
+        Set-ProxionConsoleVisible -Visible $false
+
+        $script:sawMonitoredProcess = $false
+        $script:startupDeadline = (Get-Date).AddSeconds($config.startupTimeoutSeconds)
+
+        $timer = New-Object System.Windows.Forms.Timer
+        $timer.Interval = [Math]::Max(1000, [int]$config.pollIntervalSeconds * 1000)
+        $timer.Add_Tick({
+            if (-not $script:sawMonitoredProcess) {
+                if (Test-AnyProcessRunning -Names $monitoredNames) {
+                    $script:sawMonitoredProcess = $true
+                    Write-ProxionLog -Message 'PURPLE is running. Proxion will keep routing traffic until PURPLE and every configured game process have closed.' -LogFile $logFile
+                } elseif ((Get-Date) -gt $script:startupDeadline) {
+                    Write-ProxionLog -Message 'Timed out waiting for PURPLE to start; stopping ProxyBridge.' -Level 'WARN' -LogFile $logFile
+                    Invoke-ProxionShutdown
+                }
+            } elseif (-not (Test-AnyProcessRunning -Names $monitoredNames)) {
+                Write-ProxionLog -Message 'PURPLE and all monitored game processes have closed.' -LogFile $logFile
+                Invoke-ProxionShutdown
+            }
+        })
+        $timer.Start()
+
+        [System.Windows.Forms.Application]::Run()
+    }
+    finally {
+        # Safety net: if we got here without Invoke-ProxionShutdown having run
+        # (e.g. an unhandled exception before Application.Run), clean up anyway.
+        Invoke-ProxionShutdown
     }
 }
-finally {
-    Write-ProxionLog -Message 'Stopping ProxyBridge CLI and restoring direct traffic...' -LogFile $logFile
-    Stop-ProxyBridgeCli -Process $bridgeProc
-    if (-not $KeepProfile) {
-        Remove-Item -LiteralPath $profilePath -ErrorAction SilentlyContinue
-    }
-    Write-ProxionLog -Message 'Proxion session ended.' -LogFile $logFile
-}
+
+Start-ProxionSession

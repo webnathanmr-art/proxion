@@ -8,9 +8,10 @@ underlying traffic-redirection engine.
 
 Proxion is a thin orchestration layer: it generates a ProxyBridge `.pbprofile`
 from your config, starts `ProxyBridge_CLI.exe` headlessly, launches PURPLE,
-and stays running in the background — routing traffic the whole time — until
-PURPLE and every game process you configured have closed. It then stops
-ProxyBridge automatically so your traffic goes back to direct.
+and sits in the system tray — routing traffic the whole time — until PURPLE
+and every game process you configured have closed, or you close it yourself
+from the tray icon. It then stops ProxyBridge automatically so your traffic
+goes back to direct.
 
 **Platform: Windows only.** ProxyBridge intercepts traffic via the WinDivert
 kernel driver, and PURPLE is a Windows-only launcher, so this tool only runs
@@ -26,9 +27,11 @@ on Windows (PowerShell 5.1+ or PowerShell 7+).
 3. It launches `ProxyBridge_CLI.exe --profile <generated profile>`
    (requires Administrator, since WinDivert needs kernel access), then
    launches PURPLE.
-4. It polls in the background while PURPLE or any configured game process is
-   running.
-5. When they've all closed, it stops the ProxyBridge CLI process and deletes
+4. It shows a **tray icon** (using PURPLE's own icon) and hides its console
+   window, so there's nothing on screen but the tray icon. It polls in the
+   background while PURPLE or any configured game process is running.
+5. When they've all closed — or you click **Stop Proxion** from the tray
+   icon's right-click menu — it stops the ProxyBridge CLI process and deletes
    the generated profile, restoring normal direct traffic.
 
 ## Requirements
@@ -92,11 +95,28 @@ cd path\to\proxion
 Proxion will:
 - print what it's doing to the console and to a timestamped file under `logs\`
 - start routing PURPLE + your configured games through the proxy
-- block in the foreground, monitoring those processes, until they all close
-- clean up automatically when they do
+- launch PURPLE, then show a **tray icon** and hide its console window
+- keep routing traffic in the background until they all close, or you stop it
+- clean up automatically either way
 
-Press `Ctrl+C` to stop early — the `finally` block still stops ProxyBridge
-and restores direct traffic.
+### Stopping it
+
+Proxion is meant to be closed from its **tray icon**, not `Ctrl+C` — a
+console window treats `Ctrl+C` as "copy" whenever text is selected, which
+made it an unreliable and confusing way to exit. Instead:
+
+- **Right-click** the tray icon (it uses PURPLE's own icon, so look for that)
+  and choose **Stop Proxion**, or
+- **Double-click** the tray icon.
+
+Either one stops ProxyBridge and restores direct traffic immediately — you
+don't need to close PURPLE first. If you'd rather stop it from a terminal
+(e.g. scripting, or the tray icon got lost), `Stop-Proxion.ps1` (below) does
+the same thing.
+
+The tray icon needs an STA thread; if you happen to run the script from a
+host that isn't already STA, it transparently relaunches itself in one — you
+won't normally notice this happening.
 
 ### Dry run
 
@@ -109,8 +129,8 @@ launching anything:
 
 ### Recovering from a crash
 
-If PowerShell was killed and left `ProxyBridge_CLI.exe` running (traffic
-still routed through the proxy), run:
+If Proxion was killed abnormally (e.g. via Task Manager) and left
+`ProxyBridge_CLI.exe` running (traffic still routed through the proxy), run:
 
 ```powershell
 .\scripts\Stop-Proxion.ps1
@@ -151,10 +171,12 @@ logs/                            # created at runtime, one log file per session
 - This repo was developed and syntax/logic-tested on Linux with PowerShell 7
   (the platform-independent parts: config parsing, validation, and profile
   generation). It has **not** been exercised against a real Windows install
-  of PURPLE or ProxyBridge, or against a live proxy connection — there is no
-  Windows environment available in the sandbox this was built in. Please
-  test locally before relying on it, especially the auto-detection paths and
-  process-name matching for your specific games.
+  of PURPLE or ProxyBridge, a live proxy connection, or the tray icon /
+  console-hiding UI itself (those rely on `System.Windows.Forms` and Win32
+  APIs unavailable on Linux) — there is no Windows environment available in
+  the sandbox this was built in. Please test locally before relying on it,
+  especially the auto-detection paths, process-name matching for your
+  specific games, and the tray icon's Stop/Open Log actions.
 - If auto-detection of PURPLE fails (e.g. a regional variant installs under
   a differently-named folder, such as `Purple_TW` or `Purple_KR`), set
   `purpleLauncherPath` explicitly in your config.

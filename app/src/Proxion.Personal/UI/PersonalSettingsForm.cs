@@ -105,7 +105,15 @@ public sealed class PersonalSettingsForm : Form
         AcceptButton = _launchButton;
 
         FormClosing += OnFormClosing;
-        Load += (_, _) => PreFill();
+        Load += (_, _) => RefreshFromStorage();
+
+        // Populate the fields immediately, not just on Load: the auto-run startup path
+        // calls SaveCurrentSettings() (which reads these same fields) without ever
+        // calling Show() first, and Load only fires the first time a form is actually
+        // shown. Without this, auto-run would read back an empty PurplePath/AutoRun
+        // from a never-populated textbox and silently overwrite the real stored values
+        // with blanks on every single auto-run launch.
+        RefreshFromStorage();
     }
 
     private void OnFormClosing(object? sender, FormClosingEventArgs e)
@@ -117,7 +125,7 @@ public sealed class PersonalSettingsForm : Form
         }
     }
 
-    private void PreFill()
+    public void RefreshFromStorage()
     {
         var stored = SettingsStore.Load();
         _purplePathBox.Text = PathIfExists(stored.PurpleLauncherPath) ?? PurpleLocator.TryAutoDetect() ?? string.Empty;

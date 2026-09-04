@@ -207,14 +207,24 @@ as resources (`EmbeddedProxyBridge.cs` extracts them to
 - The process-tree scoping is polling-based (every 3 seconds) rather than event-driven,
   so there's a small window (well under the poll interval, in practice) between a game
   actually starting and Proxion noticing it.
+- **Double-check your proxy's Type matches what your provider actually says it is.**
+  This one caused a real outage: a proxy-cheap residential proxy was configured here as
+  `SOCKS5`, but proxy-cheap's own dashboard listed that proxy's "Connection Type" as
+  `HTTP`. Sending a SOCKS5 handshake to an HTTP-only proxy breaks the tunnel for
+  everything routed through it — PURPLE's own login failed ("Unable to log in") even
+  though ProxyBridge was actively routing its traffic, since the requests were being
+  malformed at the protocol level, not blocked. Always set Type to whatever your proxy
+  provider's own control panel says, not a guess.
 - **If a game connects but the connection then times out** (reported with Aion 2, but
-  applies to any game), the most likely cause is that its real-time traffic uses UDP and
-  your proxy doesn't support SOCKS5's UDP ASSOCIATE command — most don't. ProxyBridge
-  can't relay UDP through such a proxy, so it just hangs. `Proxion.App`'s setup window
-  and `Proxion.Personal`'s Advanced Settings both have a **Route** dropdown for this:
-  switching it to "TCP only" lets UDP traffic go direct instead of failing through a
-  tunnel that can't carry it, while everything else (login, chat, store, and PURPLE
-  itself) stays proxied over TCP as before.
+  applies to any game) *after* confirming the Type above is correct, the most likely
+  remaining cause is that its real-time traffic uses UDP and your proxy doesn't support
+  SOCKS5's UDP ASSOCIATE command — most don't (an HTTP-type proxy config already falls
+  back to direct for UDP automatically, per ProxyBridge's own docs, so this mainly
+  applies to SOCKS5 proxies). `Proxion.App`'s setup window and `Proxion.Personal`'s
+  Advanced Settings both have a **Route** dropdown for this: switching it to "TCP only"
+  lets UDP traffic go direct instead of failing through a tunnel that can't carry it,
+  while everything else (login, chat, store, and PURPLE itself) stays proxied over TCP
+  as before.
 - The ping-based tray icon uses ICMP (`System.Net.NetworkInformation.Ping`), which many
   proxy servers/firewalls block entirely — that's the normal case the cat-icon fallback
   handles, not a bug. A successful ping also only confirms the host answers ICMP, not

@@ -41,3 +41,28 @@ jobs:
         with:
           name: Proxion-windows-x64
           path: publish/Proxion.exe
+
+  # NOTE: unlike publish-exe above, this bakes PersonalProxyConfig.cs's hardcoded
+  # proxy credentials into the published binary, and this job then uploads that
+  # binary as a build artifact that anyone with read access to this repo can
+  # download with one click - a more casually-discoverable copy of those
+  # credentials than the source file itself. Only enabled on this branch, on
+  # purpose. Think before copying this job to a branch/repo with wider access.
+  publish-personal-exe:
+    needs: test-core
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Publish self-contained single-file exe (Proxion.Personal)
+        run: >
+          dotnet publish app/src/Proxion.Personal/Proxion.Personal.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish-personal
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Proxion-Personal-windows-x64
+          path: publish-personal/Proxion.exe

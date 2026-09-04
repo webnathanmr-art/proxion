@@ -115,9 +115,16 @@ ProxyBridge does **not** need to be separately installed — it's bundled inside
 Every push to this repo builds `Proxion.exe` (the general `Proxion.App`) via GitHub
 Actions (`.github/workflows/build.yml`) and uploads it as a build artifact — see the
 **Actions** tab, pick the latest successful "Build Proxion" run, and download the
-`Proxion-windows-x64` artifact. (`Proxion.Personal` is deliberately **not** built by CI,
-since doing so would publish its hardcoded proxy credentials as a shared build
-artifact — build it locally instead, below.)
+`Proxion-windows-x64` artifact.
+
+**On this branch only**, CI also builds `Proxion.Personal` (as `Proxion-Personal-windows-x64`)
+via a second job, `publish-personal-exe`. That job is commented in `build.yml` with why
+it's not something to copy to a more widely-shared branch or repo without thinking it
+through first: it bakes `PersonalProxyConfig.cs`'s hardcoded credentials into the
+published binary, and publishing that as a build artifact gives anyone with read access
+to the repo a one-click download of them — a more casually-discoverable copy than the
+source file itself. That's a deliberate, accepted tradeoff here for a private, personal
+branch; don't merge this job as-is into `main` or any branch/repo with wider access.
 
 To build either one yourself (works from Windows, Linux, or macOS — the .NET SDK can
 cross-compile a Windows executable):

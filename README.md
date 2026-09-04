@@ -39,8 +39,10 @@ observed as PURPLE's own descendants ever get added in the first place.
 | | `Proxion.App` | `Proxion.Personal` |
 |---|---|---|
 | Proxy settings | You enter them in a setup window | Hardcoded at build time |
-| Launches PURPLE | Yes, automatically | No — you open it yourself; Proxion detects it |
-| Setup window | Full form (PURPLE path, proxy type/host/port/credentials) | A one-time disclaimer naming the proxy host/port, then it moves to the tray |
+| PURPLE path | Auto-detected, or Browse | Auto-detected, or Browse |
+| Launches PURPLE | Automatically, right after setup | From a **Launch PURPLE** button you click |
+| Auto-run on startup | N/A (always launches PURPLE) | Optional tickbox: skip the window next time and launch PURPLE immediately |
+| Re-opening the window | N/A (only shown once per run) | Tray icon → **Show Settings**, any time, even mid-session |
 | Icon | PURPLE's own icon | Custom (a cat) |
 | Intended for | Anyone — general-purpose | **Personal use only**, by whoever built it |
 
@@ -48,26 +50,34 @@ observed as PURPLE's own descendants ever get added in the first place.
 where re-entering the same proxy details every time is pure friction. Its proxy is
 compiled in as a constant in `app/src/Proxion.Personal/PersonalProxyConfig.cs` — **it
 is not meant to be given to other people to run**, since they'd have no visible way to
-see or change what proxy it's hardcoded to route their traffic through. Its disclaimer
-window exists specifically so whoever *does* run it (i.e. its own builder) always sees
-the host/port before anything starts.
+see or change what proxy it's hardcoded to route their traffic through. Its window
+exists specifically so whoever *does* run it (i.e. its own builder) always sees the
+host/port before anything starts, and can change the PURPLE path or auto-run setting
+whenever they want via the tray icon.
 
 If you want a build to hand to someone else, that's what `Proxion.App` is for.
 
 ## How it works
 
-1. **Setup window** (`Proxion.App`) or **disclaimer window** (`Proxion.Personal`, shown
-   once with the hardcoded proxy's host/port before you continue).
-   `Proxion.App` also lets you browse to `PurpleLauncher.exe` (auto-detected under
-   `Program Files (x86)\NCSOFT` if possible) and fill in your proxy's type, host, port,
-   and optional username/password. Settings are remembered (password encrypted for your
-   Windows account) so you don't need to re-enter them next time.
-2. Proxion generates a ProxyBridge `.pbprofile` and starts the embedded ProxyBridge CLI
-   headlessly (this needs Administrator — see below).
-   - `Proxion.App` then launches PURPLE for you.
-   - `Proxion.Personal` instead waits for *you* to open PURPLE yourself.
-3. A **tray icon** appears and the console-less app has nothing else on screen.
-   Right-click it for **Stop Proxion** and **Open Log File**, or double-click to stop.
+1. **Setup window** (`Proxion.App`) or **settings window** (`Proxion.Personal`) opens.
+   Both let you browse to `PurpleLauncher.exe` (auto-detected under
+   `Program Files (x86)\NCSOFT` if possible). `Proxion.App` also has fields for your
+   proxy's type, host, port, and optional username/password (`Proxion.Personal`'s proxy
+   is fixed at build time, but its host/port are always shown in the window so you know
+   what it's routing through). Settings are remembered (password encrypted for your
+   Windows account, for `Proxion.App`) so you don't need to re-enter them next time.
+   - `Proxion.Personal` also has a tickbox: **Automatically launch PURPLE next time
+     Proxion starts**. Leave it unchecked to always see the window first; check it to
+     skip straight to launching PURPLE (and hiding to tray) on future runs.
+2. You click **Start** (`Proxion.App`) or **Launch PURPLE** (`Proxion.Personal`) —
+   or, if you ticked auto-run, this happens immediately without showing the window.
+   Proxion generates a ProxyBridge `.pbprofile`, starts the embedded ProxyBridge CLI
+   headlessly (this needs Administrator — see below), and launches PURPLE.
+3. The window hides and a **tray icon** appears — the console-less app has nothing
+   else on screen. Right-click it for **Stop Proxion** and **Open Log File**; in
+   `Proxion.Personal`, also **Show Settings**, which brings the window back (to change
+   the PURPLE path or the auto-run tickbox) without stopping anything already running.
+   Double-click the tray icon to stop (`Proxion.App`) or show settings (`Proxion.Personal`).
 4. Proxion polls the process tree in the background. Whenever PURPLE launches something
    new, that process's name is added to the proxy rule and ProxyBridge is restarted with
    the updated rule (a brief, sub-second interruption).
@@ -129,7 +139,8 @@ app/
                         # auto-detection, WMI process-tree snapshots, ProxyBridge
                         # process control, and the embedded ProxyBridge/icon assets.
     Proxion.App/        # The general-purpose WinForms app: setup window + tray icon.
-    Proxion.Personal/   # The personal fork: hardcoded proxy, disclaimer window + tray.
+    Proxion.Personal/   # The personal fork: hardcoded proxy, settings window (PURPLE
+                        # picker + Launch button + auto-run tickbox) + tray.
   test/
     Proxion.Core.Tests/ # xUnit tests for Proxion.Core (30 tests covering profile
                         # generation and, especially, the process-tree scoping logic).
@@ -165,11 +176,9 @@ as resources (`EmbeddedProxyBridge.cs` extracts them to
   icon — but the actual WinForms UI, tray icon, WMI process-tree polling,
   PURPLE/ProxyBridge process management, and a real proxy connection have **not** been
   exercised end-to-end. Please test locally before relying on it.
-- If auto-detection of PURPLE fails in `Proxion.App` (e.g. a regional variant installs
-  under a differently-named folder, such as `Purple_TW` or `Purple_KR`), use the
-  **Browse** button next to the PURPLE field in the setup window.
-  `Proxion.Personal` doesn't launch PURPLE at all, so this doesn't apply to it - it
-  just waits for a process literally named `PurpleLauncher.exe` to appear.
+- If auto-detection of PURPLE fails (e.g. a regional variant installs under a
+  differently-named folder, such as `Purple_TW` or `Purple_KR`), use the **Browse**
+  button next to the PURPLE field in the setup/settings window.
 - The process-tree scoping is polling-based (every 3 seconds) rather than event-driven,
   so there's a small window (well under the poll interval, in practice) where a
   just-launched game hasn't been detected yet. If PURPLE hands off to a game and exits

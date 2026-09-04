@@ -16,6 +16,9 @@ public sealed class StoredSettings
 
     /// <summary>DPAPI-protected (current user), base64-encoded. Never the plaintext password.</summary>
     public string? ProtectedPassword { get; set; }
+
+    /// <summary>Proxion.Personal only: launch PURPLE automatically on startup instead of waiting for the button.</summary>
+    public bool AutoRunPurple { get; set; }
 }
 
 /// <summary>Loads and saves <see cref="StoredSettings"/> under %AppData%\Proxion\settings.json.</summary>

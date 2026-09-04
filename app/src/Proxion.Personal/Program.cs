@@ -12,15 +12,9 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
 
-        using var disclaimer = new DisclaimerForm();
-        if (disclaimer.ShowDialog() != DialogResult.OK)
-        {
-            return;
-        }
-
         try
         {
-            Application.Run(new PersonalTrayContext());
+            Application.Run(new PersonalAppContext());
         }
         catch (Exception ex)
         {

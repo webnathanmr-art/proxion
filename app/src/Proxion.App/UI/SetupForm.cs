@@ -22,6 +22,7 @@ public sealed class SetupForm : Form
     private readonly TextBox _portBox = new();
     private readonly TextBox _usernameBox = new();
     private readonly TextBox _passwordBox = new() { UseSystemPasswordChar = true };
+    private readonly ComboBox _protocolBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly CheckBox _localhostViaProxyBox = new() { Text = "Also route localhost (127.x.x.x / ::1) traffic through the proxy" };
 
     public SessionSetupResult? Result { get; private set; }
@@ -33,7 +34,7 @@ public sealed class SetupForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(540, 380);
+        ClientSize = new Size(540, 430);
         Font = new Font("Segoe UI", 9f);
 
         var layout = new TableLayoutPanel
@@ -58,6 +59,9 @@ public sealed class SetupForm : Form
         AddRow(layout, "Port:", _portBox);
         AddRow(layout, "Username (optional):", _usernameBox);
         AddRow(layout, "Password (optional):", _passwordBox);
+        _protocolBox.Items.AddRange(new object[] { "Both (default)", "TCP only", "UDP only" });
+        _protocolBox.SelectedIndex = 0;
+        AddRow(layout, "Route:", _protocolBox);
 
         layout.RowCount++;
         layout.Controls.Add(_localhostViaProxyBox, 0, layout.RowCount - 1);
@@ -66,10 +70,13 @@ public sealed class SetupForm : Form
         var noteLabel = new Label
         {
             Text = "Only NCSOFT PURPLE and the games it actually launches will be routed through this proxy - "
-                 + "nothing else on your system.",
+                 + "nothing else on your system." + Environment.NewLine + Environment.NewLine
+                 + "If a game connects but then times out, it likely relies on UDP and your proxy probably "
+                 + "doesn't support relaying it (most SOCKS5 proxies don't) - try \"TCP only\" above so UDP "
+                 + "goes direct instead of through a tunnel that can't carry it.",
             AutoSize = false,
             Dock = DockStyle.Top,
-            Height = 40,
+            Height = 80,
             Padding = new Padding(16, 8, 16, 0),
             ForeColor = SystemColors.GrayText,
         };
@@ -148,6 +155,12 @@ public sealed class SetupForm : Form
         _portBox.Text = stored.ProxyPort > 0 ? stored.ProxyPort.ToString() : string.Empty;
         _usernameBox.Text = stored.ProxyUsername;
         _passwordBox.Text = SettingsStore.UnprotectPassword(stored.ProtectedPassword);
+        _protocolBox.SelectedIndex = stored.RuleProtocol.ToUpperInvariant() switch
+        {
+            "TCP" => 1,
+            "UDP" => 2,
+            _ => 0,
+        };
     }
 
     private static string? PathIfExists(string path) =>
@@ -188,6 +201,12 @@ public sealed class SetupForm : Form
             Host = _hostBox.Text.Trim(),
             Username = _usernameBox.Text,
             Password = _passwordBox.Text,
+            Protocol = _protocolBox.SelectedIndex switch
+            {
+                1 => RuleProtocol.TcpOnly,
+                2 => RuleProtocol.UdpOnly,
+                _ => RuleProtocol.Both,
+            },
         };
         if (!int.TryParse(_portBox.Text.Trim(), out var port))
         {

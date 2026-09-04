@@ -17,6 +17,7 @@ public sealed class AdvancedProxySettingsForm : Form
     private readonly TextBox _portBox = new();
     private readonly TextBox _usernameBox = new();
     private readonly TextBox _passwordBox = new() { UseSystemPasswordChar = true };
+    private readonly ComboBox _protocolBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
 
     public ProxySettings? Result { get; private set; }
 
@@ -27,7 +28,7 @@ public sealed class AdvancedProxySettingsForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(420, 300);
+        ClientSize = new Size(420, 380);
         Font = new Font("Segoe UI", 9f);
         Icon = IconLoader.Load();
 
@@ -47,20 +48,32 @@ public sealed class AdvancedProxySettingsForm : Form
         AddRow(layout, "Port:", _portBox);
         AddRow(layout, "Username:", _usernameBox);
         AddRow(layout, "Password:", _passwordBox);
+        _protocolBox.Items.AddRange(new object[] { "Both (default)", "TCP only", "UDP only" });
+        AddRow(layout, "Route:", _protocolBox);
 
         _typeBox.SelectedIndex = current.Type == ProxyType.Http ? 1 : 0;
         _hostBox.Text = current.Host;
         _portBox.Text = current.Port > 0 ? current.Port.ToString() : string.Empty;
         _usernameBox.Text = current.Username;
         _passwordBox.Text = current.Password;
+        _protocolBox.SelectedIndex = current.Protocol switch
+        {
+            RuleProtocol.TcpOnly => 1,
+            RuleProtocol.UdpOnly => 2,
+            _ => 0,
+        };
 
         var note = new Label
         {
             Text = "This overrides the proxy this build was compiled with. Takes effect "
-                 + "immediately if PURPLE is already running, and is remembered for next time.",
+                 + "immediately if PURPLE is already running, and is remembered for next time."
+                 + Environment.NewLine + Environment.NewLine
+                 + "If a game connects but then times out, its traffic likely relies on UDP and "
+                 + "your proxy probably doesn't support relaying it (most SOCKS5 proxies don't) - "
+                 + "try \"TCP only\" so UDP goes direct instead of through a tunnel that can't carry it.",
             AutoSize = false,
             Dock = DockStyle.Top,
-            Height = 50,
+            Height = 130,
             Padding = new Padding(16, 12, 16, 0),
             ForeColor = SystemColors.GrayText,
         };
@@ -104,6 +117,12 @@ public sealed class AdvancedProxySettingsForm : Form
             Host = _hostBox.Text.Trim(),
             Username = _usernameBox.Text,
             Password = _passwordBox.Text,
+            Protocol = _protocolBox.SelectedIndex switch
+            {
+                1 => RuleProtocol.TcpOnly,
+                2 => RuleProtocol.UdpOnly,
+                _ => RuleProtocol.Both,
+            },
         };
 
         var errors = new List<string>();

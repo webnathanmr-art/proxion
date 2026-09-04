@@ -13,6 +13,7 @@ public sealed class StoredSettings
     public string ProxyHost { get; set; } = string.Empty;
     public int ProxyPort { get; set; }
     public string ProxyUsername { get; set; } = string.Empty;
+    public string RuleProtocol { get; set; } = "BOTH";
 
     /// <summary>DPAPI-protected (current user), base64-encoded. Never the plaintext password.</summary>
     public string? ProtectedPassword { get; set; }
@@ -96,6 +97,7 @@ public static class SettingsStore
             ProxyHost = proxy.Host,
             ProxyPort = proxy.Port,
             ProxyUsername = proxy.Username,
+            RuleProtocol = proxy.ProtocolLabel,
             ProtectedPassword = ProtectPassword(proxy.Password),
         };
     }
@@ -109,6 +111,12 @@ public static class SettingsStore
             Port = stored.ProxyPort,
             Username = stored.ProxyUsername,
             Password = UnprotectPassword(stored.ProtectedPassword),
+            Protocol = stored.RuleProtocol.ToUpperInvariant() switch
+            {
+                "TCP" => RuleProtocol.TcpOnly,
+                "UDP" => RuleProtocol.UdpOnly,
+                _ => RuleProtocol.Both,
+            },
         };
     }
 }

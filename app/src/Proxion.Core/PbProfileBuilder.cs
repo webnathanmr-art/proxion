@@ -51,7 +51,7 @@ public static class PbProfileBuilder
                     ProcessName = string.Join("; ", names),
                     TargetHosts = "*",
                     TargetPorts = "*",
-                    Protocol = "BOTH",
+                    Protocol = proxy.ProtocolLabel,
                     Action = "PROXY",
                     IsEnabled = true,
                     ProxyConfigId = 1,

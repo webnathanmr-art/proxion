@@ -107,6 +107,66 @@ public class SessionRuleTrackerTests
     }
 
     [Fact]
+    public void Poll_StillDetectsANewGame_EvenIfPurpleHasAlreadyExitedByTheTimeItAppears()
+    {
+        // Regression test for a real reported bug: PURPLE hands off to the game and
+        // closes itself (a common launcher pattern) quickly enough that PURPLE's own
+        // PID is never alive in the same poll as the game's. The old implementation
+        // only ever looked for new descendants while the root was alive in that same
+        // poll, so it never discovered the game at all, and then incorrectly reported
+        // SessionEnded (since neither PURPLE nor - because it was never added -
+        // the game were in the tracked-names set) right as the user started playing.
+        var tracker = new SessionRuleTracker(rootPid: 100, rootProcessName: "PurpleLauncher.exe");
+
+        // First poll: only PURPLE is running.
+        Assert.Equal(SessionPollResult.Unchanged, tracker.Poll(new[]
+        {
+            new ProcessSnapshot(100, 1, "PurpleLauncher.exe"),
+        }, out _));
+
+        // Second poll: PURPLE has already exited, but the game it spawned (whose
+        // recorded ParentPid still correctly points back to PURPLE's PID) is now up.
+        var result = tracker.Poll(new[]
+        {
+            new ProcessSnapshot(300, 100, "Aion2.exe"),
+        }, out var newNames);
+
+        Assert.Equal(SessionPollResult.NewProcessesDetected, result);
+        Assert.Equal(new[] { "Aion2.exe" }, newNames);
+        Assert.Contains("Aion2.exe", tracker.TrackedNames);
+
+        // And the session correctly stays alive afterwards, tracking the game.
+        var stillRunning = new[] { new ProcessSnapshot(300, 1, "Aion2.exe") };
+        Assert.Equal(SessionPollResult.Unchanged, tracker.Poll(stillRunning, out _));
+    }
+
+    [Fact]
+    public void Poll_StillDetectsAGrandchildGame_EvenAfterTheIntermediateHelperHasExited()
+    {
+        // PURPLE -> helper -> game. The helper (pid 200) is seen once, alongside
+        // PURPLE, so it's recorded into the family; by the next poll both PURPLE and
+        // the helper have exited and only the game is left running, with its ParentPid
+        // pointing at the (now dead) helper. The family must already contain 200 from
+        // the earlier poll for this chain to be inferable at all - Proxion can only
+        // ever learn a PID belongs to PURPLE's family while that PID's own row is still
+        // visible in some snapshot.
+        var tracker = new SessionRuleTracker(rootPid: 100, rootProcessName: "PurpleLauncher.exe");
+        tracker.Poll(new[]
+        {
+            new ProcessSnapshot(100, 1, "PurpleLauncher.exe"),
+            new ProcessSnapshot(200, 100, "PurpleHelper.exe"),
+        }, out _);
+
+        var result = tracker.Poll(new[]
+        {
+            new ProcessSnapshot(300, 200, "Aion2.exe"), // parent (200, the helper) is no longer in this snapshot
+        }, out var newNames);
+
+        Assert.Equal(SessionPollResult.NewProcessesDetected, result);
+        Assert.Equal(new[] { "Aion2.exe" }, newNames);
+    }
+
+    [Fact]
     public void UnrelatedProcessWithGamesName_DoesNotPreventSessionEnded_IfPurpleNeverLaunchedIt()
     {
         var tracker = new SessionRuleTracker(rootPid: 100, rootProcessName: "PurpleLauncher.exe");

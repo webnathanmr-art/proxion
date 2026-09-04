@@ -24,7 +24,10 @@ it starts by routing only `PurpleLauncher.exe` itself, and each time PURPLE laun
 new process (the actual game, a patcher, etc.) Proxion detects it as PURPLE's child (or
 grandchild) process and adds it to the proxy rule — automatically, with no game-specific
 configuration needed. Nothing else on your system is ever added to the rule, because
-nothing else is a descendant of PURPLE's process.
+nothing else is a descendant of PURPLE's process. This keeps working even if PURPLE
+closes itself once it's handed off to the game (a common launcher pattern) — a
+process's recorded parent PID doesn't change after the parent exits, so Proxion can
+still correctly attribute the game to PURPLE.
 
 One caveat worth knowing: ProxyBridge itself matches traffic by *executable name*, not
 by process ID. So if you happened to be running some unrelated program with the exact
@@ -192,7 +195,7 @@ as resources (`EmbeddedProxyBridge.cs` extracts them to
 
 - This was built and tested in a Linux sandbox with no Windows machine, real PURPLE
   install, or live proxy available. `Proxion.Core`'s logic is covered by unit tests
-  (`dotnet test`, 30 passing), and both `Proxion.App` and `Proxion.Personal` were
+  (`dotnet test`, 41 passing), and both `Proxion.App` and `Proxion.Personal` were
   verified to compile and publish cleanly for `win-x64` — including the embedded
   `requireAdministrator` manifest, the embedded ProxyBridge binaries, and the embedded
   icon — but the actual WinForms UI, tray icon, WMI process-tree polling,
@@ -202,11 +205,16 @@ as resources (`EmbeddedProxyBridge.cs` extracts them to
   differently-named folder, such as `Purple_TW` or `Purple_KR`), use the **Browse**
   button next to the PURPLE field in the setup/settings window.
 - The process-tree scoping is polling-based (every 3 seconds) rather than event-driven,
-  so there's a small window (well under the poll interval, in practice) where a
-  just-launched game hasn't been detected yet. If PURPLE hands off to a game and exits
-  *itself* within that window, Proxion could miss adding the game to the rule — in
-  normal use PURPLE stays running alongside its games, so this is an edge case rather
-  than the common path.
+  so there's a small window (well under the poll interval, in practice) between a game
+  actually starting and Proxion noticing it.
+- **If a game connects but the connection then times out** (reported with Aion 2, but
+  applies to any game), the most likely cause is that its real-time traffic uses UDP and
+  your proxy doesn't support SOCKS5's UDP ASSOCIATE command — most don't. ProxyBridge
+  can't relay UDP through such a proxy, so it just hangs. `Proxion.App`'s setup window
+  and `Proxion.Personal`'s Advanced Settings both have a **Route** dropdown for this:
+  switching it to "TCP only" lets UDP traffic go direct instead of failing through a
+  tunnel that can't carry it, while everything else (login, chat, store, and PURPLE
+  itself) stays proxied over TCP as before.
 - The ping-based tray icon uses ICMP (`System.Net.NetworkInformation.Ping`), which many
   proxy servers/firewalls block entirely — that's the normal case the cat-icon fallback
   handles, not a bug. A successful ping also only confirms the host answers ICMP, not

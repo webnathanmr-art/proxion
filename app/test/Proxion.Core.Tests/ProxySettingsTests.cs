@@ -32,4 +32,18 @@ public class ProxySettingsTests
         Assert.Equal("socks5", new ProxySettings { Type = ProxyType.Socks5 }.TypeLabel);
         Assert.Equal("http", new ProxySettings { Type = ProxyType.Http }.TypeLabel);
     }
+
+    [Fact]
+    public void Protocol_DefaultsToBoth()
+    {
+        Assert.Equal(RuleProtocol.Both, new ProxySettings().Protocol);
+    }
+
+    [Fact]
+    public void ProtocolLabel_MatchesProxyBridgeExpectedStrings()
+    {
+        Assert.Equal("BOTH", new ProxySettings { Protocol = RuleProtocol.Both }.ProtocolLabel);
+        Assert.Equal("TCP", new ProxySettings { Protocol = RuleProtocol.TcpOnly }.ProtocolLabel);
+        Assert.Equal("UDP", new ProxySettings { Protocol = RuleProtocol.UdpOnly }.ProtocolLabel);
+    }
 }

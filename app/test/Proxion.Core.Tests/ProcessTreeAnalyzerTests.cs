@@ -125,4 +125,66 @@ public class ProcessTreeAnalyzerTests
         Assert.DoesNotContain(9000, pids);
         Assert.Contains(200, pids);
     }
+
+    [Fact]
+    public void GrowFamily_FindsChildrenAndGrandchildren_InOneCall()
+    {
+        var snapshot = new[]
+        {
+            new ProcessSnapshot(100, 1, "PurpleLauncher.exe"),
+            new ProcessSnapshot(200, 100, "PurpleHelper.exe"),
+            new ProcessSnapshot(300, 200, "Aion2.exe"),
+        };
+
+        var family = ProcessTreeAnalyzer.GrowFamily(snapshot, knownFamilyPids: new[] { 100 });
+
+        Assert.Equal(new HashSet<int> { 100, 200, 300 }, family);
+    }
+
+    [Fact]
+    public void GrowFamily_DoesNotRequireTheRootToStillBeAlive()
+    {
+        // PURPLE (pid 100) has already exited by the time this snapshot is taken, but
+        // the game it launched (pid 300) is still alive and its recorded ParentPid
+        // still correctly points back to 100 - Windows never changes that field after
+        // the parent exits. GrowFamily must be able to use that fact even though pid
+        // 100 itself is absent from this snapshot.
+        var snapshot = new[]
+        {
+            new ProcessSnapshot(300, 100, "Aion2.exe"),
+        };
+
+        var family = ProcessTreeAnalyzer.GrowFamily(snapshot, knownFamilyPids: new[] { 100 });
+
+        Assert.Contains(300, family);
+    }
+
+    [Fact]
+    public void GrowFamily_NeverForgetsPreviouslyKnownMembers_EvenIfTheyAreNowGone()
+    {
+        var snapshot = new[]
+        {
+            new ProcessSnapshot(300, 1, "Aion2.exe"), // pid 100 and 200 have both exited
+        };
+
+        var family = ProcessTreeAnalyzer.GrowFamily(snapshot, knownFamilyPids: new[] { 100, 200 });
+
+        Assert.Equal(new HashSet<int> { 100, 200 }, family); // nothing new found, nothing lost either
+    }
+
+    [Fact]
+    public void GetProcessNames_ReturnsOnlyNamesOfPidsInTheGivenSet_ExcludingAnyThatArentCurrentlyAlive()
+    {
+        // pid 100 (PURPLE) is in the requested set (it's part of the family) but has
+        // already exited, so it's absent from this snapshot; pid 300 is alive.
+        var snapshot = new[]
+        {
+            new ProcessSnapshot(300, 100, "Aion2.exe"),
+            new ProcessSnapshot(9000, 1, "notepad.exe"),
+        };
+
+        var names = ProcessTreeAnalyzer.GetProcessNames(snapshot, pids: new[] { 100, 300 });
+
+        Assert.Equal(new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "Aion2.exe" }, names);
+    }
 }

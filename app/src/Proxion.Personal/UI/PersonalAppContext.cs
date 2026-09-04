@@ -136,6 +136,7 @@ public sealed class PersonalAppContext : ApplicationContext
         stored.ProxyHost = proxy.Host;
         stored.ProxyPort = proxy.Port;
         stored.ProxyUsername = proxy.Username;
+        stored.RuleProtocol = proxy.ProtocolLabel;
         stored.ProtectedPassword = SettingsStore.ProtectPassword(proxy.Password);
         SettingsStore.Save(stored);
     }

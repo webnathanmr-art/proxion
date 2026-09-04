@@ -79,6 +79,21 @@ public class PbProfileBuilderTests
     }
 
     [Theory]
+    [InlineData(RuleProtocol.Both, "BOTH")]
+    [InlineData(RuleProtocol.TcpOnly, "TCP")]
+    [InlineData(RuleProtocol.UdpOnly, "UDP")]
+    public void Build_UsesTheConfiguredRuleProtocol(RuleProtocol protocol, string expectedLabel)
+    {
+        var proxy = new ProxySettings { Type = ProxyType.Socks5, Host = "10.0.0.1", Port = 1080, Protocol = protocol };
+        var json = PbProfileBuilder.Build(proxy, new[] { "PurpleLauncher.exe" });
+        using var doc = JsonDocument.Parse(json);
+
+        var actual = doc.RootElement.GetProperty("ProxyRules")[0].GetProperty("Protocol").GetString();
+
+        Assert.Equal(expectedLabel, actual);
+    }
+
+    [Theory]
     [InlineData("")]
     [InlineData(null)]
     public void Build_WritesEmptyStringForMissingCredentials_NeverNull(string? value)

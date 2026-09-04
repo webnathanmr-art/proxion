@@ -43,7 +43,8 @@ observed as PURPLE's own descendants ever get added in the first place.
 | Launches PURPLE | Automatically, right after setup | From a **Launch PURPLE** button you click |
 | Auto-run on startup | N/A (always launches PURPLE) | Optional tickbox: skip the window next time and launch PURPLE immediately |
 | Re-opening the window | N/A (only shown once per run) | Tray icon → **Show Settings**, any time, even mid-session |
-| Icon | PURPLE's own icon | Custom (a cat) |
+| Icon | PURPLE's own icon | Live ping (ms) to the proxy, refreshed every 10s — falls back to a cat if the proxy doesn't answer ICMP pings |
+| Changing the proxy later | Re-run the setup window | Tray icon → **Advanced Settings...** — overrides the hardcoded default without rebuilding |
 | Intended for | Anyone — general-purpose | **Personal use only**, by whoever built it |
 
 `Proxion.Personal` exists for one person's own repeated use across their own machines,
@@ -56,6 +57,15 @@ host/port before anything starts, and can change the PURPLE path or auto-run set
 whenever they want via the tray icon.
 
 If you want a build to hand to someone else, that's what `Proxion.App` is for.
+
+**Advanced Settings** (tray icon → Advanced Settings...) lets you change the proxy
+type/host/port/username/password at runtime, without rebuilding. The first time you
+save a change there, it's written to the same settings file `Proxion.App` uses
+(`%AppData%\Proxion\settings.json`, password encrypted) and takes over as the
+effective proxy from then on — `PersonalProxyConfig.cs`'s hardcoded values are only
+ever used as the *initial* default, before any override has been saved. If PURPLE is
+already running when you save a change, ProxyBridge is restarted immediately with the
+new proxy.
 
 ## How it works
 
@@ -75,9 +85,14 @@ If you want a build to hand to someone else, that's what `Proxion.App` is for.
    headlessly (this needs Administrator — see below), and launches PURPLE.
 3. The window hides and a **tray icon** appears — the console-less app has nothing
    else on screen. Right-click it for **Stop Proxion** and **Open Log File**; in
-   `Proxion.Personal`, also **Show Settings**, which brings the window back (to change
-   the PURPLE path or the auto-run tickbox) without stopping anything already running.
+   `Proxion.Personal`, also **Show Settings** (brings the window back to change the
+   PURPLE path or the auto-run tickbox, without stopping anything already running) and
+   **Advanced Settings...** (override the hardcoded proxy itself — see below).
    Double-click the tray icon to stop (`Proxion.App`) or show settings (`Proxion.Personal`).
+   In `Proxion.Personal`, the tray icon itself shows the current ping (in milliseconds)
+   to the proxy, re-checked every 10 seconds; if the proxy doesn't respond to ICMP pings
+   (common for many servers/firewalls), it falls back to the cat icon instead of
+   showing a permanently-stuck or misleading number.
 4. Proxion polls the process tree in the background. Whenever PURPLE launches something
    new, that process's name is added to the proxy rule and ProxyBridge is restarted with
    the updated rule (a brief, sub-second interruption).
@@ -185,6 +200,10 @@ as resources (`EmbeddedProxyBridge.cs` extracts them to
   *itself* within that window, Proxion could miss adding the game to the rule — in
   normal use PURPLE stays running alongside its games, so this is an edge case rather
   than the common path.
+- The ping-based tray icon uses ICMP (`System.Net.NetworkInformation.Ping`), which many
+  proxy servers/firewalls block entirely — that's the normal case the cat-icon fallback
+  handles, not a bug. A successful ping also only confirms the host answers ICMP, not
+  that the proxy port itself is reachable or working.
 - **Committing hardcoded credentials is a real tradeoff.** `PersonalProxyConfig.cs` puts
   a plaintext username/password in source control. That's fine for a private repo you
   fully control, but worth remembering if this repo's visibility or ownership ever

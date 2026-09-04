@@ -87,7 +87,11 @@ new proxy.
    Proxion generates a ProxyBridge `.pbprofile`, starts the embedded ProxyBridge CLI
    headlessly (this needs Administrator — see below), and launches PURPLE.
 3. The window hides and a **tray icon** appears — the console-less app has nothing
-   else on screen. Right-click it for **Stop Proxion** and **Open Log File**; in
+   else on screen. Right-click it for **Stop Proxion**, **Open Log File** (Proxion's own
+   log), and **Open ProxyBridge Log** (ProxyBridge CLI's own connection-level output —
+   run at `--verbose 3` and captured to a file since its console window is hidden; this
+   is what shows whether a connection actually completed, was refused, or reset, which
+   is invaluable for diagnosing "it connects but doesn't work" issues). In
    `Proxion.Personal`, also **Show Settings** (brings the window back to change the
    PURPLE path or the auto-run tickbox, without stopping anything already running) and
    **Advanced Settings...** (override the hardcoded proxy itself — see below).

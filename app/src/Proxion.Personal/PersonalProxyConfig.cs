@@ -20,15 +20,12 @@ internal static class PersonalProxyConfig
 
     public static ProxySettings Proxy => new()
     {
-        // proxy-cheap's own dashboard lists this proxy's "Connection Type" as HTTP, not
-        // SOCKS5 - sending a SOCKS5 handshake to an HTTP-only proxy breaks the tunnel
-        // for everything routed through it (this was the actual cause of PURPLE's own
-        // login failing, and likely Aion 2's connection timing out too). Per
-        // ProxyBridge's docs, an HTTP proxy config also means UDP automatically falls
-        // back to a direct connection (HTTP proxies can't relay UDP at all), so the
-        // Protocol override probably isn't needed once this is correct - but it's
-        // still there in Advanced Settings if some other traffic needs it.
-        Type = ProxyType.Http,
+        // Must always match this proxy's "Connection Type" as shown on proxy-cheap's own
+        // dashboard - currently SOCKS5 (it was briefly HTTP there, which is why this was
+        // set to Http for a while). A mismatch in either direction breaks the tunnel for
+        // everything routed through it - garbled at the protocol level, not just slow -
+        // so double check the dashboard again before assuming this value is stale.
+        Type = ProxyType.Socks5,
         Host = "178.94.233.93",
         Port = 42342,
         Username = "IlTdPm49RXatwoz",

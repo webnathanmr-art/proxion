@@ -19,9 +19,10 @@ public sealed class PersonalAppContext : ApplicationContext
     private const int PollIntervalMs = 3000;
     private const int PingIntervalMs = 10_000;
     private const int PingTimeoutMs = 2000;
-    private const int ProxyBridgeVerbosity = 1;
+    private const int ProxyBridgeVerbosity = 3; // both logs and connection events - see _proxyBridgeLogPath
 
     private readonly SessionLogger _logger;
+    private readonly string _proxyBridgeLogPath;
     private readonly ProxyBridgeProcessRunner _bridge = new();
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _pingTimer;
@@ -42,6 +43,7 @@ public sealed class PersonalAppContext : ApplicationContext
     public PersonalAppContext()
     {
         _logger = new SessionLogger(AppPaths.NewLogFilePath());
+        _proxyBridgeLogPath = AppPaths.NewProxyBridgeLogFilePath();
         _cliPath = PersonalProxyConfig.CliPathOverride ?? EmbeddedProxyBridge.ExtractIfNeeded();
         _proxy = LoadEffectiveProxy();
 
@@ -59,6 +61,8 @@ public sealed class PersonalAppContext : ApplicationContext
         advanced.Click += (_, _) => ShowAdvancedSettings();
         var openLog = menu.Items.Add("Open Log File");
         openLog.Click += (_, _) => OpenLogFile();
+        var openBridgeLog = menu.Items.Add("Open ProxyBridge Log");
+        openBridgeLog.Click += (_, _) => OpenProxyBridgeLogFile();
         var stop = menu.Items.Add("Stop Proxion");
         stop.Click += (_, _) => Shutdown("Stopped from the tray icon (Stop Proxion).");
 
@@ -122,7 +126,7 @@ public sealed class PersonalAppContext : ApplicationContext
         if (_tracker is not null)
         {
             WriteProfile(_tracker.TrackedNames);
-            _bridge.Restart(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity);
+            _bridge.Restart(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity, _proxyBridgeLogPath);
             UpdateSessionStatus($"Routing via {ProxyLabel()}");
         }
 
@@ -173,7 +177,7 @@ public sealed class PersonalAppContext : ApplicationContext
         _logger.Info("Starting ProxyBridge CLI (traffic routing begins now)...");
         try
         {
-            _bridge.Start(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity);
+            _bridge.Start(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity, _proxyBridgeLogPath);
         }
         catch (Exception ex)
         {
@@ -246,7 +250,7 @@ public sealed class PersonalAppContext : ApplicationContext
             case SessionPollResult.NewProcessesDetected:
                 _logger.Info($"PURPLE launched a new process: {string.Join(", ", newNames)}. Updating the proxy rule.");
                 WriteProfile(_tracker.TrackedNames);
-                _bridge.Restart(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity);
+                _bridge.Restart(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity, _proxyBridgeLogPath);
                 _trayIcon.ShowBalloonTip(3000, "Proxion", $"Now also routing: {string.Join(", ", newNames)}", ToolTipIcon.Info);
                 break;
 
@@ -326,6 +330,24 @@ public sealed class PersonalAppContext : ApplicationContext
         try
         {
             Process.Start(new ProcessStartInfo("notepad.exe", $"\"{_logger.LogFilePath}\"") { UseShellExecute = true });
+        }
+        catch (Exception)
+        {
+            // Not critical if this fails.
+        }
+    }
+
+    private void OpenProxyBridgeLogFile()
+    {
+        try
+        {
+            if (!File.Exists(_proxyBridgeLogPath))
+            {
+                MessageBox.Show(_settingsForm, "ProxyBridge hasn't logged anything yet - it's only created once it actually starts.",
+                    "Proxion", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+            Process.Start(new ProcessStartInfo("notepad.exe", $"\"{_proxyBridgeLogPath}\"") { UseShellExecute = true });
         }
         catch (Exception)
         {

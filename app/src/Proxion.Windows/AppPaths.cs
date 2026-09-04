@@ -14,6 +14,10 @@ public static class AppPaths
     public static string NewLogFilePath() =>
         Path.Combine(LogsDir, $"proxion-{DateTime.Now:yyyyMMdd-HHmmss}.log");
 
+    /// <summary>ProxyBridge CLI's own captured console output (connection-level detail, not just Proxion's own log).</summary>
+    public static string NewProxyBridgeLogFilePath() =>
+        Path.Combine(LogsDir, $"proxybridge-{DateTime.Now:yyyyMMdd-HHmmss}.log");
+
     public static string ProfilePath => Path.Combine(RuntimeDir, "proxion.pbprofile");
 
     private static string EnsureExists(string dir)

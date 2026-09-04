@@ -1,188 +1,129 @@
 # Proxion
 
-Routes NCSOFT **PURPLE** launcher (and the games it launches, e.g. Blade & Soul,
-Lineage 2, Guild Wars 2, Throne and Liberty) through a proxy of your choosing —
-for example an ISP-provided SOCKS5/HTTP proxy — using
-[ProxyBridge](https://github.com/InterceptSuite/ProxyBridge)'s CLI as the
-underlying traffic-redirection engine.
+A Windows app that routes NCSOFT **PURPLE** launcher's games through a proxy of your
+choosing — for example an ISP-provided SOCKS5/HTTP proxy — using
+[ProxyBridge](https://github.com/InterceptSuite/ProxyBridge)'s CLI as the underlying
+traffic-redirection engine.
 
-Proxion is a thin orchestration layer: it generates a ProxyBridge `.pbprofile`
-from your config, starts `ProxyBridge_CLI.exe` headlessly, launches PURPLE,
-and sits in the system tray — routing traffic the whole time — until PURPLE
-and every game process you configured have closed, or you close it yourself
-from the tray icon. It then stops ProxyBridge automatically so your traffic
-goes back to direct.
+Run `Proxion.exe`, fill in where PURPLE is installed and your proxy details, click
+**Start** — Proxion launches PURPLE and sits in the system tray for as long as PURPLE
+(or a game it launched) is running, then cleans up automatically. No PowerShell, no
+config files to hand-edit.
 
-**Platform: Windows only.** ProxyBridge intercepts traffic via the WinDivert
-kernel driver, and PURPLE is a Windows-only launcher, so this tool only runs
-on Windows (PowerShell 5.1+ or PowerShell 7+).
+**Platform: Windows only.** ProxyBridge intercepts traffic via the WinDivert kernel
+driver, and PURPLE is a Windows-only launcher.
+
+## Only PURPLE's own games are ever routed
+
+Proxion does not proxy based on a fixed list of game executable names you have to
+maintain. Instead, once PURPLE is running, Proxion watches the Windows process tree:
+it starts by routing only `PurpleLauncher.exe` itself, and each time PURPLE launches a
+new process (the actual game, a patcher, etc.) Proxion detects it as PURPLE's child (or
+grandchild) process and adds it to the proxy rule — automatically, with no game-specific
+configuration needed. Nothing else on your system is ever added to the rule, because
+nothing else is a descendant of PURPLE's process.
+
+One caveat worth knowing: ProxyBridge itself matches traffic by *executable name*, not
+by process ID. So if you happened to be running some unrelated program with the exact
+same filename as a game PURPLE launches, its traffic would also be routed once that
+name is added to the rule. This is a limitation of ProxyBridge's rule engine, not
+something Proxion's process-tree tracking can fully close — but it means Proxion is
+already far more precise than a hand-maintained name list, since only names actually
+observed as PURPLE's own descendants ever get added in the first place.
 
 ## How it works
 
-1. You describe your proxy (host/port/type/credentials) and install paths in
-   `config/proxion.config.json`.
-2. `Start-Proxion.ps1` resolves `PurpleLauncher.exe` and `ProxyBridge_CLI.exe`
-   (auto-detected, or from your config), then generates a `.pbprofile` with a
-   `PROXY` rule for `PurpleLauncher.exe` plus any game executables you list.
-3. It launches `ProxyBridge_CLI.exe --profile <generated profile>`
-   (requires Administrator, since WinDivert needs kernel access), then
-   launches PURPLE.
-4. It shows a **tray icon** (using PURPLE's own icon) and hides its console
-   window, so there's nothing on screen but the tray icon. It polls in the
-   background while PURPLE or any configured game process is running.
-5. When they've all closed — or you click **Stop Proxion** from the tray
-   icon's right-click menu — it stops the ProxyBridge CLI process and deletes
-   the generated profile, restoring normal direct traffic.
+1. **Setup window**: browse to `PurpleLauncher.exe` (auto-detected under
+   `Program Files (x86)\NCSOFT` if possible) and to `ProxyBridge_CLI.exe` (auto-detected
+   from PATH / the default install location), then fill in your proxy's type, host,
+   port, and optional username/password. Settings are remembered (with the password
+   encrypted for your Windows user account) so you don't need to re-enter them next time.
+2. Click **Start**. Proxion generates a ProxyBridge `.pbprofile`, starts
+   `ProxyBridge_CLI.exe` headlessly (this needs Administrator — see below), and launches
+   PURPLE.
+3. A **tray icon** appears (using PURPLE's own icon) and the console-less app has
+   nothing else on screen. Right-click it for **Stop Proxion** and **Open Log File**, or
+   double-click it to stop.
+4. Proxion polls the process tree in the background. Whenever PURPLE launches something
+   new, that process's name is added to the proxy rule and ProxyBridge is restarted with
+   the updated rule (a brief, sub-second interruption).
+5. When PURPLE and everything it launched have closed — or you stop it from the tray —
+   Proxion stops ProxyBridge and deletes the generated profile, restoring direct traffic.
 
 ## Requirements
 
-- Windows 10+, PowerShell 5.1+ (built in) or PowerShell 7+.
-- [ProxyBridge](https://github.com/InterceptSuite/ProxyBridge) installed —
-  e.g. `winget install InterceptSuite.ProxyBridge`.
+- Windows 10+ (64-bit).
+- [ProxyBridge](https://github.com/InterceptSuite/ProxyBridge) installed — e.g.
+  `winget install InterceptSuite.ProxyBridge`.
 - NCSOFT PURPLE installed.
 - A proxy to route through (SOCKS5 or HTTP), e.g. one provided by your ISP.
-- Administrator privileges when running Proxion (required by ProxyBridge's
-  WinDivert driver).
+- Administrator privileges — `Proxion.exe` requests elevation itself (a UAC prompt) on
+  launch, since ProxyBridge's WinDivert driver needs it.
 
-## Setup
+## Getting the exe
 
-1. Copy the example config and edit it:
+Every push to this repo builds `Proxion.exe` via GitHub Actions
+(`.github/workflows/build.yml`) and uploads it as a build artifact — see the **Actions**
+tab, pick the latest successful "Build Proxion" run, and download the
+`Proxion-windows-x64` artifact.
 
-   ```powershell
-   Copy-Item config\proxion.config.example.json config\proxion.config.json
-   notepad config\proxion.config.json
-   ```
+To build it yourself (works from Windows, Linux, or macOS — the .NET SDK can
+cross-compile a Windows executable):
 
-2. Fill in your proxy details:
-
-   ```json
-   {
-     "proxy": {
-       "type": "socks5",
-       "host": "203.0.113.10",
-       "port": 1080,
-       "username": "",
-       "password": ""
-     }
-   }
-   ```
-
-   `type` must be `socks5` or `http`. Leave `username`/`password` empty for
-   an unauthenticated proxy. Note that UDP traffic is only proxied through a
-   SOCKS5 proxy that supports `UDP ASSOCIATE` — an HTTP proxy will fall back
-   to direct for UDP (see ProxyBridge's own docs for details).
-
-3. (Optional) Set `purpleLauncherPath` / `proxyBridgeCliPath` explicitly if
-   auto-detection doesn't find them (e.g. non-default install locations).
-   Leave them as empty strings to auto-detect.
-
-4. Add the executable name(s) of the game(s) you play under
-   `gameProcessNames`, so Proxion keeps running (and keeps routing traffic)
-   for as long as the game itself is open — not just while the PURPLE
-   launcher window is up. A few common ones are pre-filled as examples;
-   check Task Manager's "Details" tab while the game is running if you're
-   not sure of the exact process name, and edit the list to match.
-
-## Usage
-
-From an **elevated** PowerShell prompt (Run as Administrator):
-
-```powershell
-cd path\to\proxion
-.\scripts\Start-Proxion.ps1
+```bash
+dotnet publish app/src/Proxion.App/Proxion.App.csproj \
+  -c Release -r win-x64 --self-contained true \
+  -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true \
+  -o publish
 ```
 
-Proxion will:
-- print what it's doing to the console and to a timestamped file under `logs\`
-- start routing PURPLE + your configured games through the proxy
-- launch PURPLE, then show a **tray icon** and hide its console window
-- keep routing traffic in the background until they all close, or you stop it
-- clean up automatically either way
-
-### Stopping it
-
-Proxion is meant to be closed from its **tray icon**, not `Ctrl+C` — a
-console window treats `Ctrl+C` as "copy" whenever text is selected, which
-made it an unreliable and confusing way to exit. Instead:
-
-- **Right-click** the tray icon (it uses PURPLE's own icon, so look for that)
-  and choose **Stop Proxion**, or
-- **Double-click** the tray icon.
-
-Either one stops ProxyBridge and restores direct traffic immediately — you
-don't need to close PURPLE first. If you'd rather stop it from a terminal
-(e.g. scripting, or the tray icon got lost), `Stop-Proxion.ps1` (below) does
-the same thing.
-
-The tray icon needs an STA thread; if you happen to run the script from a
-host that isn't already STA, it transparently relaunches itself in one — you
-won't normally notice this happening.
-
-### Dry run
-
-Check what Proxion would do (resolved paths, generated profile) without
-launching anything:
-
-```powershell
-.\scripts\Start-Proxion.ps1 -DryRun
-```
-
-### Recovering from a crash
-
-If Proxion was killed abnormally (e.g. via Task Manager) and left
-`ProxyBridge_CLI.exe` running (traffic still routed through the proxy), run:
-
-```powershell
-.\scripts\Stop-Proxion.ps1
-```
-
-## Config reference
-
-| Field | Description | Default |
-|---|---|---|
-| `proxy.type` | `socks5` or `http` | required |
-| `proxy.host` | Proxy hostname or IP | required |
-| `proxy.port` | Proxy port | required |
-| `proxy.username` / `proxy.password` | Proxy credentials, if required | `""` |
-| `localhostViaProxy` | Route `127.0.0.0/8` / `::1` traffic through the proxy too | `false` |
-| `trafficLogging` | Enable ProxyBridge's connection logging | `true` |
-| `verbose` | ProxyBridge CLI verbosity: `0` silent, `1` logs, `2` connections, `3` both | `1` |
-| `proxyBridgeCliPath` | Explicit path to `ProxyBridge_CLI.exe` | auto-detected |
-| `purpleLauncherPath` | Explicit path to `PurpleLauncher.exe` | auto-detected under `Program Files (x86)\NCSOFT` |
-| `gameProcessNames` | Extra process names (games) to route + monitor | `[]` |
-| `pollIntervalSeconds` | How often to check whether PURPLE/games are still running | `3` |
-| `startupTimeoutSeconds` | How long to wait for PURPLE/a game to appear before giving up | `30` |
+`publish/Proxion.exe` is a single, self-contained file (~160 MB, since it bundles the
+.NET 8 runtime and WinForms) — copy it anywhere and run it, no .NET install required on
+the target machine. If your users already have the .NET 8 Desktop Runtime installed,
+you can drop `--self-contained true` and the two `Publish*` properties for a
+framework-dependent build instead (a few hundred KB, but requires that runtime).
 
 ## Project layout
 
 ```
-config/
-  proxion.config.example.json   # copy to proxion.config.json and edit
-scripts/
-  Proxion.psm1                  # core logic (config, profile generation, process control)
-  Start-Proxion.ps1             # main entry point
-  Stop-Proxion.ps1              # manual cleanup if a session was killed abnormally
-logs/                            # created at runtime, one log file per session
-.runtime/                        # created at runtime, holds the generated .pbprofile
+app/
+  src/
+    Proxion.Core/     # Pure logic: profile generation, process-tree scoping, proxy
+                       # validation. No Windows dependency - runs and tests anywhere.
+    Proxion.App/       # The WinForms app: setup window, tray icon, ProxyBridge/PURPLE
+                       # process management, WMI process-tree snapshots. Windows-only.
+  test/
+    Proxion.Core.Tests/ # xUnit tests for Proxion.Core (30 tests covering profile
+                        # generation and, especially, the process-tree scoping logic).
+.github/workflows/build.yml  # CI: runs the tests, then publishes Proxion.exe
 ```
+
+`Proxion.Core` deliberately has zero Windows-specific dependencies, so the logic that
+decides *which* processes are "PURPLE's own" (`ProcessTreeAnalyzer`,
+`SessionRuleTracker`) and *what* the generated `.pbprofile` looks like
+(`PbProfileBuilder`) is fully unit-tested — run `dotnet test app/test/Proxion.Core.Tests`
+on any platform.
 
 ## Notes & limitations
 
-- This repo was developed and syntax/logic-tested on Linux with PowerShell 7
-  (the platform-independent parts: config parsing, validation, and profile
-  generation). It has **not** been exercised against a real Windows install
-  of PURPLE or ProxyBridge, a live proxy connection, or the tray icon /
-  console-hiding UI itself (those rely on `System.Windows.Forms` and Win32
-  APIs unavailable on Linux) — there is no Windows environment available in
-  the sandbox this was built in. Please test locally before relying on it,
-  especially the auto-detection paths, process-name matching for your
-  specific games, and the tray icon's Stop/Open Log actions.
-- If auto-detection of PURPLE fails (e.g. a regional variant installs under
-  a differently-named folder, such as `Purple_TW` or `Purple_KR`), set
-  `purpleLauncherPath` explicitly in your config.
-- ProxyBridge's `.pbprofile` matches processes by executable filename, not
-  full path, and by design matches every process with that name — the
-  generated profile just lists PURPLE's filename plus your configured game
-  filenames in one `PROXY` rule.
-- Use only with a proxy you're authorized to use (e.g. one your own ISP
-  provided you), and only for your own account/traffic.
+- This was built and tested in a Linux sandbox with no Windows machine, real PURPLE
+  install, ProxyBridge install, or live proxy available. `Proxion.Core`'s logic is
+  covered by unit tests (`dotnet test`, 30 passing), and `Proxion.App` was verified to
+  compile and publish cleanly for `win-x64`, including the embedded
+  `requireAdministrator` manifest — but the actual WinForms UI, tray icon, WMI
+  process-tree polling, PURPLE/ProxyBridge process management, and a real proxy
+  connection have **not** been exercised end-to-end. Please test locally before relying
+  on it, especially: the setup window's auto-detection and validation, the tray icon's
+  Stop/Open Log actions, and that new game processes are actually detected and added to
+  the rule while PURPLE is running.
+- If auto-detection of PURPLE fails (e.g. a regional variant installs under a
+  differently-named folder, such as `Purple_TW` or `Purple_KR`), use the **Browse**
+  button next to the PURPLE field in the setup window.
+- The process-tree scoping is polling-based (every 3 seconds) rather than event-driven,
+  so there's a small window (well under the poll interval, in practice) where a
+  just-launched game hasn't been detected yet. If PURPLE hands off to a game and exits
+  *itself* within that window, Proxion could miss adding the game to the rule — in
+  normal use PURPLE stays running alongside its games, so this is an edge case rather
+  than the common path.
+- Use only with a proxy you're authorized to use (e.g. one your own ISP provided you),
+  and only for your own account/traffic.

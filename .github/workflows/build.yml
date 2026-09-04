@@ -1,0 +1,43 @@
+name: Build Proxion
+
+on:
+  push:
+    branches: ["**"]
+    paths:
+      - "app/**"
+      - ".github/workflows/build.yml"
+  pull_request:
+    paths:
+      - "app/**"
+      - ".github/workflows/build.yml"
+  workflow_dispatch: {}
+
+jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Run Proxion.Core unit tests
+        run: dotnet test app/test/Proxion.Core.Tests/Proxion.Core.Tests.csproj -c Release
+
+  publish-exe:
+    needs: test-core
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+      - name: Publish self-contained single-file exe
+        run: >
+          dotnet publish app/src/Proxion.App/Proxion.App.csproj
+          -c Release -r win-x64 --self-contained true
+          -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true
+          -o publish
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Proxion-windows-x64
+          path: publish/Proxion.exe

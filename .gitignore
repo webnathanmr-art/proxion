@@ -1,3 +1,4 @@
-config/proxion.config.json
-logs/
-.runtime/
+bin/
+obj/
+publish/
+*.user

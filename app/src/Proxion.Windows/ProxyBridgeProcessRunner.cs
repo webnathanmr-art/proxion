@@ -1,6 +1,6 @@
 using System.Diagnostics;
 
-namespace Proxion.App.Services;
+namespace Proxion.Windows;
 
 /// <summary>Starts, stops, and restarts ProxyBridge_CLI.exe against a given .pbprofile.</summary>
 public sealed class ProxyBridgeProcessRunner

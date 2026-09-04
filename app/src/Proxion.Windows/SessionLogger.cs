@@ -1,4 +1,4 @@
-namespace Proxion.App.Services;
+namespace Proxion.Windows;
 
 /// <summary>Appends timestamped lines to one log file for the lifetime of a session.</summary>
 public sealed class SessionLogger

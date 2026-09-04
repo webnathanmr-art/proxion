@@ -1,26 +1,27 @@
 using System.Diagnostics;
 using System.Drawing;
-using System.Threading;
 using System.Windows.Forms;
 using Proxion.Core;
 using Proxion.Windows;
 
-namespace Proxion.App.UI;
+namespace Proxion.Personal.UI;
 
 /// <summary>
-/// Drives one Proxion session end to end: starts ProxyBridge, launches PURPLE, shows
-/// the tray icon, and polls the process tree so the proxy rule grows to cover exactly
-/// the processes PURPLE actually launches - nothing more. Ends the session (stopping
-/// ProxyBridge and restoring direct traffic) either when the user asks via the tray
-/// icon, or once PURPLE and everything it launched have closed.
+/// Drives the personal-fork session: starts ProxyBridge against the hardcoded proxy,
+/// then waits for the user to open PURPLE themselves (rather than launching it), moving
+/// to the tray immediately. Once PURPLE is detected running, behaves exactly like the
+/// general app's session - the proxy rule grows to cover exactly what PURPLE actually
+/// launches, and the session ends (stopping ProxyBridge) when PURPLE and everything it
+/// launched have closed, or the user stops it from the tray.
 /// </summary>
-public sealed class TrayContext : ApplicationContext
+public sealed class PersonalTrayContext : ApplicationContext
 {
-    private const int StartupTimeoutSeconds = 30;
+    private const string PurpleProcessName = "PurpleLauncher.exe";
     private const int PollIntervalMs = 3000;
+    private const int WaitForPurpleTimeoutSeconds = 1800; // 30 minutes to manually open PURPLE
     private const int ProxyBridgeVerbosity = 1;
 
-    private readonly SessionSetupResult _setup;
+    private readonly ProxySettings _proxy = PersonalProxyConfig.Proxy;
     private readonly SessionLogger _logger;
     private readonly ProxyBridgeProcessRunner _bridge = new();
     private readonly System.Windows.Forms.Timer _timer;
@@ -28,19 +29,18 @@ public sealed class TrayContext : ApplicationContext
     private readonly string _cliPath;
 
     private SessionRuleTracker? _tracker;
-    private DateTime _startupDeadlineUtc;
+    private DateTime _waitDeadlineUtc;
     private bool _shutdownDone;
 
-    public TrayContext(SessionSetupResult setup)
+    public PersonalTrayContext()
     {
-        _setup = setup;
         _logger = new SessionLogger(AppPaths.NewLogFilePath());
-        _cliPath = EmbeddedProxyBridge.ExtractIfNeeded();
+        _cliPath = PersonalProxyConfig.CliPathOverride ?? EmbeddedProxyBridge.ExtractIfNeeded();
 
         _trayIcon = new NotifyIcon
         {
-            Icon = LoadIcon(setup.PurplePath),
-            Text = TrimTrayText($"Proxion - routing via {ProxyLabel()}"),
+            Icon = IconLoader.Load(),
+            Text = TrimTrayText($"Proxion - waiting for PURPLE ({ProxyLabel()})"),
             ContextMenuStrip = BuildMenu(),
             Visible = true,
         };
@@ -49,10 +49,10 @@ public sealed class TrayContext : ApplicationContext
         _timer = new System.Windows.Forms.Timer { Interval = PollIntervalMs };
         _timer.Tick += Timer_Tick;
 
-        StartSession();
+        StartWaiting();
     }
 
-    private string ProxyLabel() => $"{_setup.Proxy.TypeLabel.ToUpperInvariant()} {_setup.Proxy.Host}:{_setup.Proxy.Port}";
+    private string ProxyLabel() => $"{_proxy.TypeLabel.ToUpperInvariant()} {_proxy.Host}:{_proxy.Port}";
 
     private ContextMenuStrip BuildMenu()
     {
@@ -67,12 +67,10 @@ public sealed class TrayContext : ApplicationContext
         return menu;
     }
 
-    private void StartSession()
+    private void StartWaiting()
     {
-        var purpleName = Path.GetFileName(_setup.PurplePath);
-
-        WriteProfile(new[] { purpleName });
-        _logger.Info("Starting ProxyBridge CLI (traffic routing begins now)...");
+        WriteProfile(new[] { PurpleProcessName });
+        _logger.Info("Starting ProxyBridge CLI...");
         try
         {
             _bridge.Start(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity);
@@ -87,44 +85,22 @@ public sealed class TrayContext : ApplicationContext
             return;
         }
 
-        // Give ProxyBridge a moment to come up (or fail) before launching PURPLE.
-        Thread.Sleep(1500);
+        System.Threading.Thread.Sleep(1500);
         if (_bridge.HasExited)
         {
             _logger.Warn($"ProxyBridge CLI exited immediately (exit code {_bridge.ExitCode}).");
             MessageBox.Show(
-                "ProxyBridge CLI exited immediately. Check that ProxyBridge is installed correctly "
-                + "and that Proxion is running as Administrator.",
+                "ProxyBridge CLI exited immediately. Make sure Proxion is running as Administrator.",
                 "Proxion", MessageBoxButtons.OK, MessageBoxIcon.Error);
             _trayIcon.Visible = false;
             ExitThread();
             return;
         }
 
-        _logger.Info($"Launching NCSOFT PURPLE: {_setup.PurplePath}");
-        Process? purpleProcess;
-        try
-        {
-            purpleProcess = Process.Start(new ProcessStartInfo(_setup.PurplePath) { UseShellExecute = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.Warn($"Failed to launch PURPLE: {ex.Message}");
-            MessageBox.Show($"Failed to launch PURPLE:{Environment.NewLine}{ex.Message}",
-                "Proxion", MessageBoxButtons.OK, MessageBoxIcon.Error);
-            _bridge.Stop();
-            _trayIcon.Visible = false;
-            ExitThread();
-            return;
-        }
-
-        var purplePid = purpleProcess?.Id ?? -1;
-        _tracker = new SessionRuleTracker(purplePid, purpleName);
-        _startupDeadlineUtc = DateTime.UtcNow.AddSeconds(StartupTimeoutSeconds);
-
-        _logger.Info("Proxion is now running in the background. Use the tray icon to stop it.");
+        _waitDeadlineUtc = DateTime.UtcNow.AddSeconds(WaitForPurpleTimeoutSeconds);
+        _logger.Info($"Waiting for {PurpleProcessName} to start (open it manually now)...");
         _trayIcon.ShowBalloonTip(4000, "Proxion",
-            $"Routing PURPLE traffic through {ProxyLabel()}. Right-click the tray icon to stop.",
+            $"Waiting for PURPLE. Open it now - traffic will route through {ProxyLabel()} once detected.",
             ToolTipIcon.Info);
 
         _timer.Start();
@@ -132,11 +108,6 @@ public sealed class TrayContext : ApplicationContext
 
     private void Timer_Tick(object? sender, EventArgs e)
     {
-        if (_tracker is null)
-        {
-            return;
-        }
-
         IReadOnlyList<ProcessSnapshot> snapshot;
         try
         {
@@ -148,27 +119,45 @@ public sealed class TrayContext : ApplicationContext
             return;
         }
 
-        var result = _tracker.Poll(snapshot, out var newNames);
+        if (_tracker is null)
+        {
+            var purple = snapshot.FirstOrDefault(p => string.Equals(p.Name, PurpleProcessName, StringComparison.OrdinalIgnoreCase));
+            if (purple.Pid != 0)
+            {
+                _logger.Info($"Detected PURPLE running (pid {purple.Pid}). Now routing its traffic.");
+                _trayIcon.Text = TrimTrayText($"Proxion - routing via {ProxyLabel()}");
+                _trayIcon.ShowBalloonTip(3000, "Proxion", $"PURPLE detected - now routing via {ProxyLabel()}.", ToolTipIcon.Info);
+                _tracker = new SessionRuleTracker(purple.Pid, PurpleProcessName);
+                HandlePoll(_tracker.Poll(snapshot, out var initialNames), initialNames);
+                return;
+            }
+
+            if (DateTime.UtcNow > _waitDeadlineUtc)
+            {
+                Shutdown("Timed out waiting for PURPLE to start.");
+            }
+            return;
+        }
+
+        HandlePoll(_tracker.Poll(snapshot, out var newNames), newNames);
+    }
+
+    private void HandlePoll(SessionPollResult result, IReadOnlyList<string> newNames)
+    {
         switch (result)
         {
             case SessionPollResult.NewProcessesDetected:
                 _logger.Info($"PURPLE launched a new process: {string.Join(", ", newNames)}. Updating the proxy rule.");
-                WriteProfile(_tracker.TrackedNames);
+                WriteProfile(_tracker!.TrackedNames);
                 _bridge.Restart(_cliPath, AppPaths.ProfilePath, ProxyBridgeVerbosity);
                 _trayIcon.ShowBalloonTip(3000, "Proxion", $"Now also routing: {string.Join(", ", newNames)}", ToolTipIcon.Info);
-                break;
-
-            case SessionPollResult.RootNotYetSeen:
-                if (DateTime.UtcNow > _startupDeadlineUtc)
-                {
-                    Shutdown("Timed out waiting for PURPLE to start.");
-                }
                 break;
 
             case SessionPollResult.SessionEnded:
                 Shutdown("PURPLE and all its launched processes have closed.");
                 break;
 
+            case SessionPollResult.RootNotYetSeen:
             case SessionPollResult.Unchanged:
             default:
                 break;
@@ -177,7 +166,7 @@ public sealed class TrayContext : ApplicationContext
 
     private void WriteProfile(IEnumerable<string> processNames)
     {
-        var json = PbProfileBuilder.Build(_setup.Proxy, processNames, localhostViaProxy: _setup.LocalhostViaProxy);
+        var json = PbProfileBuilder.Build(_proxy, processNames);
         File.WriteAllText(AppPaths.ProfilePath, json);
     }
 
@@ -218,22 +207,6 @@ public sealed class TrayContext : ApplicationContext
         _trayIcon.Dispose();
         _logger.Info("Proxion session ended.");
         ExitThread();
-    }
-
-    private static Icon LoadIcon(string exePath)
-    {
-        try
-        {
-            var icon = Icon.ExtractAssociatedIcon(exePath);
-            if (icon is not null)
-            {
-                return icon;
-            }
-        }
-        catch (Exception)
-        {
-        }
-        return SystemIcons.Application;
     }
 
     private static string TrimTrayText(string text) =>

@@ -1,7 +1,7 @@
 using System.Management;
 using Proxion.Core;
 
-namespace Proxion.App.Services;
+namespace Proxion.Windows;
 
 /// <summary>
 /// Snapshots the whole process table (pid, parent pid, image name) via WMI, so

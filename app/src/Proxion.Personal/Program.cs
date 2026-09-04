@@ -1,7 +1,7 @@
 using System.Windows.Forms;
-using Proxion.App.UI;
+using Proxion.Personal.UI;
 
-namespace Proxion.App;
+namespace Proxion.Personal;
 
 internal static class Program
 {
@@ -12,15 +12,15 @@ internal static class Program
         Application.SetCompatibleTextRenderingDefault(false);
         Application.SetHighDpiMode(HighDpiMode.SystemAware);
 
-        using var setupForm = new SetupForm();
-        if (setupForm.ShowDialog() != DialogResult.OK || setupForm.Result is null)
+        using var disclaimer = new DisclaimerForm();
+        if (disclaimer.ShowDialog() != DialogResult.OK)
         {
             return;
         }
 
         try
         {
-            Application.Run(new TrayContext(setupForm.Result));
+            Application.Run(new PersonalTrayContext());
         }
         catch (Exception ex)
         {

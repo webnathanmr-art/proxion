@@ -3,13 +3,12 @@ using System.Text;
 using System.Text.Json;
 using Proxion.Core;
 
-namespace Proxion.App.Services;
+namespace Proxion.Windows;
 
 /// <summary>What Proxion remembers between runs, so the setup window can pre-fill itself.</summary>
 public sealed class StoredSettings
 {
     public string PurpleLauncherPath { get; set; } = string.Empty;
-    public string ProxyBridgeCliPath { get; set; } = string.Empty;
     public string ProxyType { get; set; } = "socks5";
     public string ProxyHost { get; set; } = string.Empty;
     public int ProxyPort { get; set; }
@@ -85,12 +84,11 @@ public static class SettingsStore
         }
     }
 
-    public static StoredSettings FromProxySettings(string purplePath, string cliPath, ProxySettings proxy)
+    public static StoredSettings FromProxySettings(string purplePath, ProxySettings proxy)
     {
         return new StoredSettings
         {
             PurpleLauncherPath = purplePath,
-            ProxyBridgeCliPath = cliPath,
             ProxyType = proxy.TypeLabel,
             ProxyHost = proxy.Host,
             ProxyPort = proxy.Port,

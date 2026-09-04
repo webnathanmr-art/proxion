@@ -1,4 +1,4 @@
-namespace Proxion.App.Services;
+namespace Proxion.Windows;
 
 /// <summary>Where Proxion keeps its own files - never next to the exe, which might be
 /// somewhere read-only or transient like a Downloads folder.</summary>

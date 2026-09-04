@@ -1,22 +1,22 @@
 using System.Drawing;
 using System.Windows.Forms;
-using Proxion.App.Services;
 using Proxion.Core;
+using Proxion.Windows;
 
 namespace Proxion.App.UI;
 
 /// <summary>What the setup window collected, once the user clicks Start.</summary>
-public sealed record SessionSetupResult(string PurplePath, string CliPath, ProxySettings Proxy, bool LocalhostViaProxy);
+public sealed record SessionSetupResult(string PurplePath, ProxySettings Proxy, bool LocalhostViaProxy);
 
 /// <summary>
 /// The window shown on launch: where PURPLE is installed, and the proxy to route its
-/// traffic through. Both PURPLE's and ProxyBridge's paths are pre-filled by
-/// auto-detection (or the last values used), but always editable via Browse.
+/// traffic through. PURPLE's path is pre-filled by auto-detection (or the last value
+/// used), but always editable via Browse. ProxyBridge itself is bundled with Proxion,
+/// so there's nothing to locate for it.
 /// </summary>
 public sealed class SetupForm : Form
 {
     private readonly TextBox _purplePathBox = new() { ReadOnly = true };
-    private readonly TextBox _cliPathBox = new() { ReadOnly = true };
     private readonly ComboBox _proxyTypeBox = new() { DropDownStyle = ComboBoxStyle.DropDownList };
     private readonly TextBox _hostBox = new();
     private readonly TextBox _portBox = new();
@@ -33,7 +33,7 @@ public sealed class SetupForm : Form
         MaximizeBox = false;
         MinimizeBox = false;
         StartPosition = FormStartPosition.CenterScreen;
-        ClientSize = new Size(540, 420);
+        ClientSize = new Size(540, 380);
         Font = new Font("Segoe UI", 9f);
 
         var layout = new TableLayoutPanel
@@ -49,7 +49,6 @@ public sealed class SetupForm : Form
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80));
 
         AddPathRow(layout, "PURPLE launcher:", _purplePathBox, OnBrowsePurple);
-        AddPathRow(layout, "ProxyBridge CLI:", _cliPathBox, OnBrowseCli);
         AddSectionLabel(layout, "Proxy");
 
         _proxyTypeBox.Items.AddRange(new object[] { "SOCKS5", "HTTP" });
@@ -143,7 +142,6 @@ public sealed class SetupForm : Form
         var stored = SettingsStore.Load();
 
         _purplePathBox.Text = PathIfExists(stored.PurpleLauncherPath) ?? PurpleLocator.TryAutoDetect() ?? string.Empty;
-        _cliPathBox.Text = PathIfExists(stored.ProxyBridgeCliPath) ?? ProxyBridgeLocator.TryAutoDetect() ?? string.Empty;
 
         _proxyTypeBox.SelectedIndex = stored.ProxyType.Equals("http", StringComparison.OrdinalIgnoreCase) ? 1 : 0;
         _hostBox.Text = stored.ProxyHost;
@@ -156,8 +154,6 @@ public sealed class SetupForm : Form
         !string.IsNullOrWhiteSpace(path) && File.Exists(path) ? path : null;
 
     private void OnBrowsePurple(object? sender, EventArgs e) => BrowseForExe(_purplePathBox, "Locate PurpleLauncher.exe");
-
-    private void OnBrowseCli(object? sender, EventArgs e) => BrowseForExe(_cliPathBox, "Locate ProxyBridge_CLI.exe");
 
     private void BrowseForExe(TextBox target, string title)
     {
@@ -185,10 +181,6 @@ public sealed class SetupForm : Form
         {
             errors.Add("Select the PURPLE launcher executable (PurpleLauncher.exe).");
         }
-        if (string.IsNullOrWhiteSpace(_cliPathBox.Text) || !File.Exists(_cliPathBox.Text))
-        {
-            errors.Add("Select the ProxyBridge_CLI.exe executable.");
-        }
 
         var proxy = new ProxySettings
         {
@@ -214,10 +206,10 @@ public sealed class SetupForm : Form
             return;
         }
 
-        var stored = SettingsStore.FromProxySettings(_purplePathBox.Text, _cliPathBox.Text, proxy);
+        var stored = SettingsStore.FromProxySettings(_purplePathBox.Text, proxy);
         SettingsStore.Save(stored);
 
-        Result = new SessionSetupResult(_purplePathBox.Text, _cliPathBox.Text, proxy, _localhostViaProxyBox.Checked);
+        Result = new SessionSetupResult(_purplePathBox.Text, proxy, _localhostViaProxyBox.Checked);
         DialogResult = DialogResult.OK;
         Close();
     }

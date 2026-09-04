@@ -6,9 +6,10 @@
     <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
-    <RootNamespace>Proxion.App</RootNamespace>
+    <RootNamespace>Proxion.Personal</RootNamespace>
     <AssemblyName>Proxion</AssemblyName>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../Proxion.Windows/Assets/proxion.ico</ApplicationIcon>
     <InvariantGlobalization>true</InvariantGlobalization>
   </PropertyGroup>
 

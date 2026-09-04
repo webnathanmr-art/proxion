@@ -1,4 +1,4 @@
-namespace Proxion.App.Services;
+namespace Proxion.Windows;
 
 /// <summary>Best-effort auto-detection of NCSOFT PURPLE's install location.</summary>
 public static class PurpleLocator

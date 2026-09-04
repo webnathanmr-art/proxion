@@ -321,7 +321,8 @@ public sealed class PersonalAppContext : ApplicationContext
 
     private void WriteProfile(IEnumerable<string> processNames)
     {
-        var json = PbProfileBuilder.Build(_proxy, processNames);
+        var names = processNames.Concat(PurpleEcosystem.AlwaysRoutedProcessNames);
+        var json = PbProfileBuilder.Build(_proxy, names);
         File.WriteAllText(AppPaths.ProfilePath, json);
     }
 

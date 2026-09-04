@@ -181,7 +181,8 @@ public sealed class TrayContext : ApplicationContext
 
     private void WriteProfile(IEnumerable<string> processNames)
     {
-        var json = PbProfileBuilder.Build(_setup.Proxy, processNames, localhostViaProxy: _setup.LocalhostViaProxy);
+        var names = processNames.Concat(PurpleEcosystem.AlwaysRoutedProcessNames);
+        var json = PbProfileBuilder.Build(_setup.Proxy, names, localhostViaProxy: _setup.LocalhostViaProxy);
         File.WriteAllText(AppPaths.ProfilePath, json);
     }
 

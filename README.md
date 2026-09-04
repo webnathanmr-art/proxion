@@ -37,6 +37,18 @@ something Proxion's process-tree tracking can fully close — but it means Proxi
 already far more precise than a hand-maintained name list, since only names actually
 observed as PURPLE's own descendants ever get added in the first place.
 
+The one deliberate exception is `PurpleEcosystem.AlwaysRoutedProcessNames`
+(`app/src/Proxion.Core/PurpleEcosystem.cs`): a couple of PURPLE's own executables
+(`purple-agent.exe`, `purpleonp.exe`) are known to sometimes run as persistent
+background services rather than being freshly spawned as PurpleLauncher.exe's child
+every time — which the dynamic tree detection can only ever find if it's actually a
+descendant of the specific instance Proxion launched. If one of these was already
+running beforehand, its traffic would otherwise go direct, unproxied, while everything
+else correctly goes through the proxy — exactly the kind of inconsistency a login
+server's fraud detection can flag. These two names are always added to the rule
+regardless of tree membership, in addition to (never instead of) the dynamic detection
+that still covers the actual game and PURPLE's own spawned subprocesses.
+
 ## Which build should I use?
 
 | | `Proxion.App` | `Proxion.Personal` |
@@ -199,7 +211,7 @@ as resources (`EmbeddedProxyBridge.cs` extracts them to
 
 - This was built and tested in a Linux sandbox with no Windows machine, real PURPLE
   install, or live proxy available. `Proxion.Core`'s logic is covered by unit tests
-  (`dotnet test`, 41 passing), and both `Proxion.App` and `Proxion.Personal` were
+  (`dotnet test`, 43 passing), and both `Proxion.App` and `Proxion.Personal` were
   verified to compile and publish cleanly for `win-x64` — including the embedded
   `requireAdministrator` manifest, the embedded ProxyBridge binaries, and the embedded
   icon — but the actual WinForms UI, tray icon, WMI process-tree polling,
